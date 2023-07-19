@@ -11,6 +11,7 @@
 
 .NOTES
     Windows solution credit to: https://stackoverflow.com/a/20623311
+    Was originally: https://github.com/pldmgg/misc-powershell/blob/934df578de8c40b498fc2caf12b26c76fe990885/MyFunctions/PowerShellCore_Compatible/Get-FileLockProcess.ps1
 
 .PARAMETER FilePath
     This parameter is MANDATORY.
