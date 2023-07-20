@@ -114,12 +114,12 @@ function Get-FileLockProcess {
 
                 [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
                 static extern int RmRegisterResources(uint pSessionHandle,
-                                                    UInt32 nFiles,
-                                                    string[] rgsFilenames,
-                                                    UInt32 nApplications,
-                                                    [In] RM_UNIQUE_PROCESS[] rgApplications,
-                                                    UInt32 nServices,
-                                                    string[] rgsServiceNames);
+                                                      UInt32 nFiles,
+                                                      string[] rgsFilenames,
+                                                      UInt32 nApplications,
+                                                      [In] RM_UNIQUE_PROCESS[] rgApplications,
+                                                      UInt32 nServices,
+                                                      string[] rgsServiceNames);
 
                 [DllImport("rstrtmgr.dll", CharSet = CharSet.Auto)]
                 static extern int RmStartSession(out uint pSessionHandle, int dwSessionFlags, string strSessionKey);
@@ -151,20 +151,26 @@ function Get-FileLockProcess {
                     List<Process> processes = new List<Process>();
 
                     int res = RmStartSession(out handle, 0, key);
-                    if (res != 0) throw new Exception("Could not begin restart session.  Unable to determine file locker.");
+                    if (res != 0)
+                    {
+                        throw new Exception("Could not begin restart session.  Unable to determine file locker.");
+                    }
 
                     try
                     {
                         const int ERROR_MORE_DATA = 234;
-                        uint pnProcInfoNeeded = 0,
-                            pnProcInfo = 0,
-                            lpdwRebootReasons = RmRebootReasonNone;
+                        uint pnProcInfoNeeded = 0;
+                        uint pnProcInfo = 0;
+                        uint lpdwRebootReasons = RmRebootReasonNone;
 
                         string[] resources = new string[] { path }; // Just checking on one resource.
 
                         res = RmRegisterResources(handle, (uint)resources.Length, resources, 0, null, 0, null);
 
-                        if (res != 0) throw new Exception("Could not register resource.");
+                        if (res != 0)
+                        {
+                            throw new Exception("Could not register resource.");
+                        }
 
                         //Note: there's a race condition here -- the first call to RmGetList() returns
                         //      the total number of process. However, when we call RmGetList() again to get
@@ -195,9 +201,15 @@ function Get-FileLockProcess {
                                     catch (ArgumentException) { }
                                 }
                             }
-                            else throw new Exception("Could not list processes locking resource.");
+                            else
+                            {
+                                throw new Exception("Could not list processes locking resource.");
+                            }
                         }
-                        else if (res != 0) throw new Exception("Could not list processes locking resource. Failed to get size of result.");
+                        else if (res != 0)
+                        {
+                            throw new Exception("Could not list processes locking resource. Failed to get size of result.");
+                        }
                     }
                     finally
                     {
