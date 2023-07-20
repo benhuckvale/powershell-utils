@@ -1,79 +1,56 @@
 <#
 .SYNOPSIS
-    Check which process is locking a file
+    List or kill processes locking files within a directory
 
 .DESCRIPTION
-    On Windows, Get-FileLockProcess takes a path to a file and returns a System.Collections.Generic.List of
+    Kill-Processes-Locking-Files-In-Directory takes a path to a file and returns a System.Collections.Generic.List of
     System.Diagnostic.Process objects (one or more processes could have a lock on a specific file, which is why
-    a List is used).
-
-    On Linux, this function returns a PSCustomObject with similar properties.
+    a List is used). The directory is crawled for files, so can take some time for a big directory
 
 .NOTES
     Windows solution credit to: https://stackoverflow.com/a/20623311
     Was originally: https://github.com/pldmgg/misc-powershell/blob/934df578de8c40b498fc2caf12b26c76fe990885/MyFunctions/PowerShellCore_Compatible/Get-FileLockProcess.ps1
 
-.PARAMETER FilePath
+.PARAMETER Directory
     This parameter is MANDATORY.
 
-    This parameter takes a string that represents a full path to a file.
+    This parameter takes a string that represents a full path to a directory
 
 .EXAMPLE
-    # On Windows...
-    PS C:\Users\testadmin> Get-FileLockProcess -FilePath "$HOME\Downloads\call_activity_2017_Nov.xlsx"
+    PS C:\Users\testadmin> Kill-Processes-Locking-Files-In-Directory -Directory "C:/gitlab-runner"
 
     Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
     -------  ------    -----      -----     ------     --  -- -----------
-    1074      51    50056      86984       5.86   2856   2 EXCEL
-
-.EXAMPLE
-    # On Linux/MacOS
-    PS /home/pdadmin/Downloads> Get-FileLockProcess -FilePath "/home/pdadmin/Downloads/test.txt"
-
-    COMMAND  : bash
-    PID      : 244585
-    USER     : pdadmin
-    FD       : 3w
-    TYPE     : REG
-    DEVICE   : 253,2
-    SIZE/OFF : 0
-    NODE     : 100798534
-    NAME     : /home/pdadmin/Downloads/test.txt
+         90       7     5416       8736       0.03  21952   2 python
+         90       7     5420       8740       0.03  10148   2 python
 #>
 
-function Get-FileLockProcess {
+function Get-Processes-Locking-Files-In-Directory {
     [CmdletBinding()]
     Param(
-        [Parameter(Mandatory=$True)]
-        [string]$FilePath
+        [Parameter(Mandatory = $true)]
+        [string]$DirectoryPath
     )
 
-    ##### BEGIN Variable/Parameter Transforms and PreRun Prep #####
-
-    if (! $(Test-Path $FilePath)) {
-        Write-Error "The path $FilePath was not found! Halting!"
+    if (! $(Test-Path $DirectoryPath)) {
+        Write-Error "The path $DirectoryPath was not found! Halting!"
         $global:FunctionResult = "1"
         return
     }
 
-    ##### END Variable/Parameter Transforms and PreRun Prep #####
-
     Add-Type -TypeDefinition @'
         using System.Collections.Generic;
-        using System.Collections;
-        using System.IO;
-        using System.Linq;
-        using System.Runtime.InteropServices;
-        using System.Runtime;
-        using System;
         using System.Diagnostics;
+        using System.IO;
+        using System.Runtime.InteropServices;
+        using System;
 
-        namespace MyCore.Utils
+        namespace FileLockUtil
         {
-            static public class FileLockUtil
+            public static class ProcessesLockingFilesInDirectory
             {
                 [StructLayout(LayoutKind.Sequential)]
-                struct RM_UNIQUE_PROCESS
+                public struct RM_UNIQUE_PROCESS
                 {
                     public int dwProcessId;
                     public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime;
@@ -135,16 +112,16 @@ function Get-FileLockProcess {
                                             ref uint lpdwRebootReasons);
 
                 /// <summary>
-                /// Find out what process(es) have a lock on the specified file.
+                /// Find out what process(es) have a lock on the files at any depth within the specified directory path.
                 /// </summary>
-                /// <param name="path">Path of the file.</param>
-                /// <returns>Processes locking the file</returns>
+                /// <param name="directoryPath">Path to Directory under which locked files should be identified</param>
+                /// <returns>Any processes locking files within that directory</returns>
                 /// <remarks>See also:
                 /// http://msdn.microsoft.com/en-us/library/windows/desktop/aa373661(v=vs.85).aspx
                 /// http://wyupdate.googlecode.com/svn-history/r401/trunk/frmFilesInUse.cs (no copyright in code at time of viewing)
                 ///
                 /// </remarks>
-                static public List<Process> WhoIsLocking(string path)
+                public static List<Process> WhoIsLockingWithin(string directoryPath)
                 {
                     uint handle;
                     string key = Guid.NewGuid().ToString();
@@ -163,9 +140,9 @@ function Get-FileLockProcess {
                         uint pnProcInfo = 0;
                         uint lpdwRebootReasons = RmRebootReasonNone;
 
-                        string[] resources = new string[] { path }; // Just checking on one resource.
+                        string[] files = Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories);
 
-                        res = RmRegisterResources(handle, (uint)resources.Length, resources, 0, null, 0, null);
+                        res = RmRegisterResources(handle, (uint)files.Length, files, 0, null, 0, null);
 
                         if (res != 0)
                         {
@@ -179,7 +156,6 @@ function Get-FileLockProcess {
 
                         if (res == ERROR_MORE_DATA)
                         {
-                            // Create an array to store the process results
                             RM_PROCESS_INFO[] processInfo = new RM_PROCESS_INFO[pnProcInfoNeeded];
                             pnProcInfo = pnProcInfoNeeded;
 
@@ -197,7 +173,6 @@ function Get-FileLockProcess {
                                     {
                                         processes.Add(Process.GetProcessById(processInfo[i].Process.dwProcessId));
                                     }
-                                    // catch the error -- in case the process is no longer running
                                     catch (ArgumentException) { }
                                 }
                             }
@@ -223,7 +198,7 @@ function Get-FileLockProcess {
 '@
 
     try {
-        $lockingProcesses = [FileLockUtil.ProcessesLockingFilesInDirectory]::GetLockingProcesses($DirectoryPath)
+        $lockingProcesses = [FileLockUtil.ProcessesLockingFilesInDirectory]::WhoIsLockingWithin($DirectoryPath)
         $lockingProcesses
     }
     catch {
@@ -233,6 +208,6 @@ function Get-FileLockProcess {
 
 $DirectoryPath = $args[0]
 
-$lockingProcesses = Get-Processes-Holding-Files-In-Directory -DirectoryPath $DirectoryPath
+$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath
 $lockingProcesses
 
