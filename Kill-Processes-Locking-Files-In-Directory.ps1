@@ -58,31 +58,7 @@ function Get-FileLockProcess {
 
     ##### END Variable/Parameter Transforms and PreRun Prep #####
 
-
-    ##### BEGIN Main Body #####
-
-    if ($PSVersionTable.PSEdition -eq "Desktop" -or $PSVersionTable.Platform -eq "Win32NT" -or
-    $($PSVersionTable.PSVersion.Major -le 5 -and $PSVersionTable.PSVersion.Major -ge 3)) {
-        $CurrentlyLoadedAssemblies = [System.AppDomain]::CurrentDomain.GetAssemblies()
-
-        $AssembliesFullInfo = $CurrentlyLoadedAssemblies | Where-Object {
-            $_.GetName().Name -eq "Microsoft.CSharp" -or
-            $_.GetName().Name -eq "mscorlib" -or
-            $_.GetName().Name -eq "System" -or
-            $_.GetName().Name -eq "System.Collections" -or
-            $_.GetName().Name -eq "System.Core" -or
-            $_.GetName().Name -eq "System.IO" -or
-            $_.GetName().Name -eq "System.Linq" -or
-            $_.GetName().Name -eq "System.Runtime" -or
-            $_.GetName().Name -eq "System.Runtime.Extensions" -or
-            $_.GetName().Name -eq "System.Runtime.InteropServices"
-        }
-        $AssembliesFullInfo = $AssembliesFullInfo | Where-Object {$_.IsDynamic -eq $False}
-
-        $ReferencedAssemblies = $AssembliesFullInfo.FullName | Sort-Object | Get-Unique
-
-        $usingStatementsAsString = @"
-        using Microsoft.CSharp;
+    Add-Type -TypeDefinition @'
         using System.Collections.Generic;
         using System.Collections;
         using System.IO;
@@ -91,10 +67,6 @@ function Get-FileLockProcess {
         using System.Runtime;
         using System;
         using System.Diagnostics;
-"@
-
-        $TypeDefinition = @"
-        $usingStatementsAsString
 
         namespace MyCore.Utils
         {
