@@ -3,13 +3,20 @@
     List or kill processes locking files within a directory
 
 .DESCRIPTION
-    Kill-Processes-Locking-Files-In-Directory takes a path to a file and returns a System.Collections.Generic.List of
-    System.Diagnostic.Process objects (one or more processes could have a lock on a specific file, which is why
-    a List is used). The directory is crawled for files, so can take some time for a big directory
+    Kill-Processes-Locking-Files-In-Directory takes a directory and calls a
+    function that returns a System.Collections.Generic.List of
+    System.Diagnostic.Process objects (one or more processes could have a lock
+    on a specific file, which is why a List is used) for any processes that
+    hold a lock on a file at any depth within the directory given.
+    The default behaviour is to list the processes found holding locks. If the
+    -Kill switch is used, then StopProcess is called on these processes.
 
 .NOTES
     Windows solution credit to: https://stackoverflow.com/a/20623311
     Was originally: https://github.com/pldmgg/misc-powershell/blob/934df578de8c40b498fc2caf12b26c76fe990885/MyFunctions/PowerShellCore_Compatible/Get-FileLockProcess.ps1
+    That script was just to find what process was locking a file. This is an
+    adaptation and extension of that script to allow for searching an entire
+    directory and providing the option to kill.
 
 .PARAMETER Directory
     This parameter is MANDATORY.
@@ -17,13 +24,23 @@
     This parameter takes a string that represents a full path to a directory
 
 .EXAMPLE
-    PS C:\Users\testadmin> Kill-Processes-Locking-Files-In-Directory -Directory "C:/gitlab-runner"
+    PS C:\Users\testadmin> Kill-Processes-Locking-Files-In-Directory "C:/gitlab-runner/builds"
 
-    Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName
-    -------  ------    -----      -----     ------     --  -- -----------
-         90       7     5416       8736       0.03  21952   2 python
-         90       7     5420       8740       0.03  10148   2 python
+    Process ID: 12348, Name: python
+    Process ID: 13572, Name: python
+
+    PS C:\Users\testadmin> Kill-Processes-Locking-Files-In-Directory.ps1 "C:/gitlab-runner/builds" -Kill
+
+    Process ID: 12348, Name: python - Killed
+    Process ID: 13572, Name: python - Killed
 #>
+
+param (
+    [Parameter(Position = 0, Mandatory = $true)]
+    [ValidateScript({ Test-Path $_ -PathType Container })]
+    [string]$DirectoryPath,
+    [switch]$Kill
+)
 
 function Get-Processes-Locking-Files-In-Directory {
     [CmdletBinding()]
@@ -206,8 +223,25 @@ function Get-Processes-Locking-Files-In-Directory {
     }
 }
 
-$DirectoryPath = $args[0]
-
 $lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath
-$lockingProcesses
+
+foreach ($process in $lockingProcesses) {
+    $processId = $process.Id
+    $processName = $process.Name
+
+    Write-Host -NoNewLine "Process ID: $processId, Name: $processName"
+
+    # Kill the process if the -Kill switch is specified
+    if ($Kill) {
+        try {
+            Stop-Process -Id $processId -ErrorAction Stop
+            Write-Host " - Killed"
+        }
+        catch {
+            Write-Host " - Failed to kill the process: $_"
+        }
+    } else {
+        Write-Host ""
+    }
+}
 
