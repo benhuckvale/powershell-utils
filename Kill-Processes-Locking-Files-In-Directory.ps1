@@ -56,11 +56,12 @@ function Get-Processes-Locking-Files-In-Directory {
     }
 
     Add-Type -TypeDefinition @'
+        using System;
         using System.Collections.Generic;
         using System.Diagnostics;
         using System.IO;
+        using System.Linq;
         using System.Runtime.InteropServices;
-        using System;
 
         namespace FileLockUtil
         {
@@ -157,7 +158,10 @@ function Get-Processes-Locking-Files-In-Directory {
                         uint pnProcInfo = 0;
                         uint lpdwRebootReasons = RmRebootReasonNone;
 
-                        string[] files = Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories);
+                        string[] files = Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
+                            .AsEnumerable()
+                            .Where(file => !(file.IndexOf(Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) > -1))
+                            .ToArray();
 
                         res = RmRegisterResources(handle, (uint)files.Length, files, 0, null, 0, null);
 
