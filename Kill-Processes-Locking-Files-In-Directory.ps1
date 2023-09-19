@@ -41,9 +41,6 @@ param (
     [string]$DirectoryPath,
 
     [Parameter()]
-    [int]$BatchSize = 10000,
-
-    [Parameter()]
     [string]$ExcludedDirs = ".git",
 
     [switch]$Kill
@@ -260,7 +257,7 @@ if ($ExcludedDirs) {
     $excludedDirsArray = $ExcludedDirs.Split(',')
 }
 # But we then call the function internal to this script with an array arg:
-$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath -ExcludedDirs $excludedDirsArray -BatchSize $BatchSize
+$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath -ExcludedDirs $excludedDirsArray
 
 foreach ($process in $lockingProcesses) {
     $processId = $process.Id
