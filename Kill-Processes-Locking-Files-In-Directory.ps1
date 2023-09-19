@@ -39,6 +39,10 @@ param (
     [Parameter(Position = 0, Mandatory = $true)]
     [ValidateScript({ Test-Path $_ -PathType Container })]
     [string]$DirectoryPath,
+
+    [Parameter()]
+    [string]$ExcludedDirs = ".git",
+
     [switch]$Kill
 )
 
@@ -46,7 +50,10 @@ function Get-Processes-Locking-Files-In-Directory {
     [CmdletBinding()]
     Param(
         [Parameter(Mandatory = $true)]
-        [string]$DirectoryPath
+        [string]$DirectoryPath,
+
+        [Parameter()]
+        [string[]]$ExcludedDirs = @()
     )
 
     if (! $(Test-Path $DirectoryPath)) {
@@ -65,7 +72,7 @@ function Get-Processes-Locking-Files-In-Directory {
 
         namespace FileLockUtil
         {
-            public static class ProcessesLockingFilesInDirectory
+            static public class ProcessesLockingFilesInDirectory
             {
                 [StructLayout(LayoutKind.Sequential)]
                 public struct RM_UNIQUE_PROCESS
@@ -133,13 +140,14 @@ function Get-Processes-Locking-Files-In-Directory {
                 /// Find out what process(es) have a lock on the files at any depth within the specified directory path.
                 /// </summary>
                 /// <param name="directoryPath">Path to Directory under which locked files should be identified</param>
+                /// <param name="excludedDirs">Names of directories to exclude with case-insensitive match, which can occur at any level in the path. For example, could use {".git"}</param>
                 /// <returns>Any processes locking files within that directory</returns>
                 /// <remarks>See also:
                 /// http://msdn.microsoft.com/en-us/library/windows/desktop/aa373661(v=vs.85).aspx
                 /// http://wyupdate.googlecode.com/svn-history/r401/trunk/frmFilesInUse.cs (no copyright in code at time of viewing)
                 ///
                 /// </remarks>
-                public static List<Process> WhoIsLockingWithin(string directoryPath)
+                public static List<Process> WhoIsLockingWithin(string directoryPath, string[] excludedDirs = null)
                 {
                     uint handle;
                     string key = Guid.NewGuid().ToString();
@@ -158,10 +166,21 @@ function Get-Processes-Locking-Files-In-Directory {
                         uint pnProcInfo = 0;
                         uint lpdwRebootReasons = RmRebootReasonNone;
 
-                        string[] files = Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
-                            .AsEnumerable()
-                            .Where(file => !(file.IndexOf(Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) > -1))
-                            .ToArray();
+                        string[] files = Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories);
+
+                        if (excludedDirs != null && excludedDirs.Length > 0)
+                        {
+                            excludedDirs = excludedDirs
+                                .Where(dir => !string.IsNullOrWhiteSpace(dir))
+                                .Select(dir => Path.DirectorySeparatorChar + dir.Trim(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar)
+                                .ToArray();
+
+                            files = files.Where(file =>
+                            {
+                                string directory = Path.GetDirectoryName(file) + Path.DirectorySeparatorChar;
+                                return !excludedDirs.Any(excludedDir => directory.IndexOf(excludedDir) >= 0);
+                            }).ToArray();
+                        }
 
                         res = RmRegisterResources(handle, (uint)files.Length, files, 0, null, 0, null);
 
@@ -219,7 +238,7 @@ function Get-Processes-Locking-Files-In-Directory {
 '@
 
     try {
-        $lockingProcesses = [FileLockUtil.ProcessesLockingFilesInDirectory]::WhoIsLockingWithin($DirectoryPath)
+        $lockingProcesses = [FileLockUtil.ProcessesLockingFilesInDirectory]::WhoIsLockingWithin($DirectoryPath, $ExcludedDirs)
         $lockingProcesses
     }
     catch {
@@ -227,7 +246,12 @@ function Get-Processes-Locking-Files-In-Directory {
     }
 }
 
-$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath
+# Processing the arg to this script as a single string parameter and splitting it seems to work better
+if ($ExcludedDirs) {
+    $excludedDirsArray = $ExcludedDirs.Split(',')
+}
+# But we then call the function internal to this script with an array arg:
+$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath -ExcludedDirs $excludedDirsArray
 
 foreach ($process in $lockingProcesses) {
     $processId = $process.Id
