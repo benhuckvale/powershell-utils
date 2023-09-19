@@ -21,7 +21,15 @@
 .PARAMETER Directory
     This parameter is MANDATORY.
 
-    This parameter takes a string that represents a full path to a directory
+    A string that represents a full path to the target directory within which
+    locked files should be discovered.
+
+.PARAMETER ExcludeDirs
+    This parameter is OPTIONAL.
+
+    A comma-separated list of directories to exclude when considering files
+    recursively within the target directory. For example '.git,build', such
+    that '.git' and 'build' could occur anywhere in the folder hierarchy.
 
 .EXAMPLE
     PS C:\Users\testadmin> Kill-Processes-Locking-Files-In-Directory "C:/gitlab-runner/builds"
