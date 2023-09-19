@@ -41,6 +41,9 @@ param (
     [string]$DirectoryPath,
 
     [Parameter()]
+    [int]$BatchSize = 10000,
+
+    [Parameter()]
     [string]$ExcludedDirs = ".git",
 
     [switch]$Kill
@@ -51,6 +54,9 @@ function Get-Processes-Locking-Files-In-Directory {
     Param(
         [Parameter(Mandatory = $true)]
         [string]$DirectoryPath,
+
+        [Parameter()]
+        [int]$BatchSize = 10000,
 
         [Parameter()]
         [string[]]$ExcludedDirs = @()
@@ -147,7 +153,7 @@ function Get-Processes-Locking-Files-In-Directory {
                 /// http://wyupdate.googlecode.com/svn-history/r401/trunk/frmFilesInUse.cs (no copyright in code at time of viewing)
                 ///
                 /// </remarks>
-                public static List<Process> WhoIsLockingWithin(string directoryPath, string[] excludedDirs = null)
+                public static List<Process> WhoIsLockingWithin(string directoryPath, string[] excludedDirs = null, int batchSize = 10000)
                 {
                     uint handle;
                     string key = Guid.NewGuid().ToString();
@@ -182,11 +188,14 @@ function Get-Processes-Locking-Files-In-Directory {
                             }).ToArray();
                         }
 
-                        res = RmRegisterResources(handle, (uint)files.Length, files, 0, null, 0, null);
+                        for(int i = 0; i < files.Length; i += batchSize) {
+                            string[] batchFiles = files.Skip(i).Take(batchSize).ToArray();
+                            res = RmRegisterResources(handle, (uint)batchFiles.Length, batchFiles, 0, null, 0, null);
 
-                        if (res != 0)
-                        {
-                            throw new Exception("Could not register resource.");
+                            if (res != 0)
+                            {
+                                throw new Exception("Could not register resource.");
+                            }
                         }
 
                         //Note: there's a race condition here -- the first call to RmGetList() returns
@@ -238,7 +247,7 @@ function Get-Processes-Locking-Files-In-Directory {
 '@
 
     try {
-        $lockingProcesses = [FileLockUtil.ProcessesLockingFilesInDirectory]::WhoIsLockingWithin($DirectoryPath, $ExcludedDirs)
+        $lockingProcesses = [FileLockUtil.ProcessesLockingFilesInDirectory]::WhoIsLockingWithin($DirectoryPath, $ExcludedDirs, $BatchSize)
         $lockingProcesses
     }
     catch {
@@ -251,7 +260,7 @@ if ($ExcludedDirs) {
     $excludedDirsArray = $ExcludedDirs.Split(',')
 }
 # But we then call the function internal to this script with an array arg:
-$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath -ExcludedDirs $excludedDirsArray
+$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath -ExcludedDirs $excludedDirsArray -BatchSize $BatchSize
 
 foreach ($process in $lockingProcesses) {
     $processId = $process.Id
