@@ -31,6 +31,15 @@
     recursively within the target directory. For example '.git,build', such
     that '.git' and 'build' could occur anywhere in the folder hierarchy.
 
+.PARAMETER Timeout
+    This parameter is OPTIONAL.
+
+    Core part of this script calls into the Restart Manager, which can take a long
+    time if the directory has a large number of files to check. So it is run in
+    a separate job with the timeout specified in seconds. If the timeout is
+    exceeded the job is killed and any locking processes will not be listed nor
+    killed.
+
 .EXAMPLE
     PS C:\Users\testadmin> Kill-Processes-Locking-Files-In-Directory "C:/gitlab-runner/builds"
 
@@ -51,10 +60,14 @@ param (
     [Parameter()]
     [string]$ExcludedDirs = ".git",
 
+    [Parameter()]
+    [int]$Timeout = 60,
+
     [switch]$Kill
 )
 
-function Get-Processes-Locking-Files-In-Directory {
+
+function GetProcessesLockingFilesInDirectory {
     [CmdletBinding()]
     Param(
         [Parameter(Mandatory = $true)]
@@ -261,29 +274,42 @@ function Get-Processes-Locking-Files-In-Directory {
 }
 
 # Processing the arg to this script as a single string parameter and splitting it seems to work better
-if ($ExcludedDirs) {
-    $excludedDirsArray = $ExcludedDirs.Split(',')
-}
-# But we then call the function internal to this script with an array arg:
-$lockingProcesses = Get-Processes-Locking-Files-In-Directory -DirectoryPath $DirectoryPath -ExcludedDirs $excludedDirsArray
+$excludedDirsArray = if ($ExcludedDirs) { $ExcludedDirs.Split(',') } else { @() }
 
-foreach ($process in $lockingProcesses) {
-    $processId = $process.Id
-    $processName = $process.Name
+$canonicalPath = Resolve-Path -Path $DirectoryPath
 
-    Write-Host -NoNewLine "Process ID: $processId, Name: $processName"
+$job = Start-Job -ScriptBlock {
+    $function:Task = "$using:function:GetProcessesLockingFilesInDirectory"
+    # But we then call the function internal to this script with an array arg:
+    $lockingProcesses = Task -DirectoryPath $args[0] -ExcludedDirs $args[1]
+    $lockingProcesses
+} -ArgumentList $canonicalPath, $excludedDirsArray
 
-    # Kill the process if the -Kill switch is specified
-    if ($Kill) {
-        try {
-            Stop-Process -Id $processId -ErrorAction Stop
-            Write-Host " - Killed"
+$jobCompleted = Wait-Job -Job $job -Timeout $Timeout
+
+if (-not $jobCompleted) {
+    Stop-Job -Job $job
+    Remove-Job -Job $job
+    Write-Host "Job was forcefully stopped due to timeout ($Timeout seconds)"
+} else {
+    $lockingProcesses = Receive-Job -Job $job
+    foreach ($process in $lockingProcesses) {
+        $processId = $process.Id
+        $processName = $process.Name
+
+        Write-Host -NoNewLine "Process ID: $processId, Name: $processName"
+
+        # Kill the process if the -Kill switch is specified
+        if ($Kill) {
+            try {
+                Stop-Process -Id $processId -ErrorAction Stop
+                Write-Host " - Killed"
+            }
+            catch {
+                Write-Host " - Failed to kill the process: $_"
+            }
+        } else {
+            Write-Host ""
         }
-        catch {
-            Write-Host " - Failed to kill the process: $_"
-        }
-    } else {
-        Write-Host ""
     }
 }
-
